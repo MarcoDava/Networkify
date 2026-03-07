@@ -110,3 +110,6 @@ pip-wheel-metadata/
 # Docker overrides
 # ==============================
 docker-compose.override.yml
+
+# Connections.csv
+backend/data
