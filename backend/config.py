@@ -1,9 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    neo4j_uri: str
-    neo4j_user: str
-    neo4j_password: str
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = ""
+    neo4j_password: str = ""
     openai_api_key: str = ""
     scrapfly_api_key: str = ""
     auth0_domain: str
