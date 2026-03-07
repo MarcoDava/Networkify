@@ -44,6 +44,48 @@ def make_id(name: str, email: str = "") -> str:
     raw = f"{name}{email}".lower().strip()
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
+
+def _find_existing_person_id(name: str, email: str, company: str, title: str) -> str | None:
+    """
+    Try to find an existing Person node that likely represents the same individual.
+
+    Matching strategy (high-confidence only):
+      1. Exact email match.
+      2. Exact normalized name + company match.
+    """
+    # 1. Email match (highest confidence)
+    if email:
+        rows = db.run(
+            """
+            MATCH (p:Person)
+            WHERE toLower(p.email) = toLower($email)
+            RETURN p.id AS id
+            LIMIT 1
+            """,
+            email=email,
+        )
+        if rows:
+            return rows[0]["id"]
+
+    # 2. Name + company match (still high confidence)
+    if name and company:
+        rows = db.run(
+            """
+            MATCH (p:Person)-[:WORKS_AT]->(c:Company)
+            WHERE toLower(p.name) = toLower($name)
+              AND toLower(c.name) = toLower($company)
+            RETURN p.id AS id
+            LIMIT 1
+            """,
+            name=name,
+            company=company,
+        )
+        if rows:
+            return rows[0]["id"]
+
+    return None
+
+
 def build_graph(df: pd.DataFrame, user: dict) -> dict:
     """
     Nodes:
@@ -56,14 +98,36 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
     """
     stats = {"persons": 0, "companies": 0, "relationships": 0}
 
-    # Create the user node
-    user_initials = "".join([part[0].upper() for part in user["name"].split() if part])
-    user_id = user.get("id") or make_id(user["name"])
-    
-    db.run_write("""
+    # Create the root/source person node for this CSV
+    user_name = user.get("name") or "Me"
+    user_initials = "".join([part[0].upper() for part in user_name.split() if part])
+    user_id = user.get("id") or make_id(user_name, user.get("email", ""))
+
+    is_user = bool(user.get("is_user", True))
+    is_source = bool(user.get("is_source", False) or is_user)
+    network_name = user.get("network_name") or ("Primary Network" if is_user else "Imported Network")
+    owner_user_id = user.get("owner_user_id") or user_id
+
+    db.run_write(
+        """
         MERGE (p:Person {id: $id})
-        SET p.name = $name, p.title = $title, p.is_user = true, p.initials = $initials
-    """, id=user_id, name=user["name"], title=user.get("title", ""), initials=user_initials)
+        SET p.name = $name,
+            p.title = $title,
+            p.is_user = $is_user,
+            p.is_source = $is_source,
+            p.initials = $initials,
+            p.owner_user_id = $owner_user_id,
+            p.network_name = $network_name
+    """,
+        id=user_id,
+        name=user_name,
+        title=user.get("title", ""),
+        is_user=is_user,
+        is_source=is_source,
+        initials=user_initials,
+        owner_user_id=owner_user_id,
+        network_name=network_name,
+    )
 
     recruiter_keywords = ["recruiter", "talent acquisition", "hiring", "hr", "people ops", "talent partner"]
 
@@ -77,14 +141,18 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         title = row.get("Position", "").strip()
         connected_on = row.get("Connected On", "")
         profile_url = row.get("URL", "")
-        person_id = make_id(name, email)
+
+        # Decide whether to merge with an existing person node
+        existing_id = _find_existing_person_id(name, email, company, title)
+        person_id = existing_id or make_id(name, email)
 
         is_recruiter = any(kw in title.lower() for kw in recruiter_keywords)
 
         initials = row.get("Initials", "")
 
         # Upsert Person
-        db.run_write("""
+        db.run_write(
+            """
             MERGE (p:Person {id: $id})
             SET p.name = $name,
                 p.title = $title,
@@ -92,34 +160,52 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
                 p.profile_url = $profile_url,
                 p.connected_on = $connected_on,
                 p.is_recruiter = $is_recruiter,
-                p.degree = 1,
                 p.initials = $initials
-        """, id=person_id, name=name, title=title, email=email,
-             profile_url=profile_url, connected_on=connected_on,
-             is_recruiter=is_recruiter, initials=initials)
+        """,
+            id=person_id,
+            name=name,
+            title=title,
+            email=email,
+            profile_url=profile_url,
+            connected_on=connected_on,
+            is_recruiter=is_recruiter,
+            initials=initials,
+        )
         stats["persons"] += 1
 
-        # Relationship: you → connection
-        db.run_write("""
+        # Relationship: root/source person → connection
+        db.run_write(
+            """
             MATCH (u:Person {id: $user_id}), (c:Person {id: $conn_id})
             MERGE (u)-[:KNOWS]->(c)
-        """, user_id=user_id, conn_id=person_id)
+        """,
+            user_id=user_id,
+            conn_id=person_id,
+        )
         stats["relationships"] += 1
 
         if company:
             # Upsert Company with logo
             logo_url = company_to_logo_url(company)
-            db.run_write("""
+            db.run_write(
+                """
                 MERGE (co:Company {name: $name})
                 SET co.logo = $logo
-            """, name=company, logo=logo_url)
+            """,
+                name=company,
+                logo=logo_url,
+            )
             stats["companies"] += 1
 
             # Relationship: connection → company
-            db.run_write("""
+            db.run_write(
+                """
                 MATCH (p:Person {id: $person_id}), (co:Company {name: $company})
                 MERGE (p)-[:WORKS_AT]->(co)
-            """, person_id=person_id, company=company)
+            """,
+                person_id=person_id,
+                company=company,
+            )
             stats["relationships"] += 1
 
     return stats

@@ -6,13 +6,14 @@ from models.person import UserProfile
 
 router = APIRouter()
 
+
 @router.get("/company")
 def search_company(
     company: str = Query(...),
     user_id: str = Query(...),
     user_name: str = Query("Me"),
-    user_companies: str = Query(""),    # comma-separated
-    user_schools: str = Query(""),      # comma-separated
+    user_companies: str = Query(""),  # comma-separated
+    user_schools: str = Query(""),  # comma-separated
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
@@ -26,19 +27,36 @@ def search_company(
 
     # Flatten all candidates
     candidates: list[Dict[str, Any]] = []
+
+    # 1st degree
     for r in paths["first_degree"]:
         p: Dict[str, Any] = dict(r["p"])
+        c = dict(r["c"])
         p["degree"] = 1
+        p["company"] = c.get("name")
         candidates.append(p)
 
+    # 2nd degree (single bridge)
     for r in paths["second_degree"]:
         p: Dict[str, Any] = dict(r["p"])
+        c = dict(r["c"])
         p["degree"] = 2
+        p["company"] = c.get("name")
         p["bridge"] = dict(r["bridge"])
         candidates.append(p)
 
+    # 3rd degree (two bridges)
+    for r in paths.get("third_degree", []):
+        p: Dict[str, Any] = dict(r["p"])
+        c = dict(r["c"])
+        p["degree"] = 3
+        p["company"] = c.get("name")
+        p["bridge"] = dict(r["bridge1"])
+        p["bridge2"] = dict(r["bridge2"])
+        candidates.append(p)
+
     ranked = rank_connections(user_profile, candidates, company)
-    
+
     # Paginate ranked results
     start = (page - 1) * page_size
     end = start + page_size
@@ -49,8 +67,9 @@ def search_company(
         "total_connections": len(ranked),
         "first_degree_count": len(paths["first_degree"]),
         "second_degree_count": len(paths["second_degree"]),
+        "third_degree_count": len(paths.get("third_degree", [])),
         "recruiters": [c for c in ranked if c.get("is_recruiter")],
         "top_connections": paginated_results,
         "page": page,
-        "page_size": page_size
+        "page_size": page_size,
     }
