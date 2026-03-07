@@ -4,7 +4,16 @@ Higher score = better person to reach out to.
 """
 from models.person import Person, UserProfile
 
-RECRUITER_KEYWORDS = ["recruiter", "talent", "hiring", "hr", "people ops", "talent partner", "talent acquisition"]
+RECRUITER_KEYWORDS = [
+    "recruiter",
+    "talent",
+    "hiring",
+    "hr",
+    "people ops",
+    "talent partner",
+    "talent acquisition",
+]
+
 
 def score_connection(user: UserProfile, candidate: dict, target_company: str) -> float:
     score = 0.0
@@ -30,11 +39,17 @@ def score_connection(user: UserProfile, candidate: dict, target_company: str) ->
     if any(s in candidate_school for s in schools):
         score += 0.10
 
-    # 5. 1st degree > 2nd degree (+0.10 bonus for direct)
-    if candidate.get("degree", 2) == 1:
+    # 5. Fewer hops is better: 1st > 2nd > 3rd
+    degree = int(candidate.get("degree", 2))
+    if degree == 1:
         score += 0.10
+    elif degree == 2:
+        score += 0.03
+    elif degree >= 3:
+        score -= 0.02
 
-    return round(min(score, 1.0), 3)
+    return round(min(max(score, 0.0), 1.0), 3)
+
 
 def rank_connections(user: UserProfile, candidates: list[dict], target_company: str) -> list[dict]:
     for c in candidates:
