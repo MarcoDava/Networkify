@@ -6,8 +6,9 @@ class Settings(BaseSettings):
     neo4j_password: str = ""
     openai_api_key: str = ""
     scrapfly_api_key: str = ""
-    google_client_id: str
-    google_client_secret: str
+    auth0_domain: str
+    auth0_client_id: str
+    auth0_client_secret: str
     app_secret_key: str
     frontend_url: str = "http://localhost:3000"
 
