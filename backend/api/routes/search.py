@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from typing import Any, Dict
 from services.graph.path_finder import find_paths_to_company
 from services.scoring.relevance import rank_connections
 from models.person import UserProfile
+from api.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -10,13 +11,19 @@ router = APIRouter()
 @router.get("/company")
 def search_company(
     company: str = Query(...),
-    user_id: str = Query(...),
-    user_name: str = Query("Me"),
     user_companies: str = Query(""),  # comma-separated
     user_schools: str = Query(""),  # comma-separated
+    current_user: dict = Depends(get_current_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
+    """
+    Search for connections at a specific company.
+    User is authenticated via JWT - user_id extracted from token.
+    """
+    user_id = current_user["id"]
+    user_name = current_user["name"] or current_user["email"].split("@")[0]
+
     user_profile = UserProfile(
         name=user_name,
         companies=[c.strip() for c in user_companies.split(",") if c.strip()],
@@ -25,7 +32,6 @@ def search_company(
 
     paths = find_paths_to_company(user_id, company)
 
-    # Flatten all candidates
     candidates: list[Dict[str, Any]] = []
 
     # 1st degree
@@ -56,8 +62,6 @@ def search_company(
         candidates.append(p)
 
     ranked = rank_connections(user_profile, candidates, company)
-
-    # Paginate ranked results
     start = (page - 1) * page_size
     end = start + page_size
     paginated_results = ranked[start:end]

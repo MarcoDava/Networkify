@@ -1,22 +1,22 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from db.neo4j_client import db
-from services.graph.builder import make_id
+from api.routes.auth import get_current_user
 
 router = APIRouter()
 
 
 @router.get("/connections")
 def get_connections(
-    user_id: str = Query(...),
+    current_user: dict = Depends(get_current_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     search: str | None = Query(None),
     company: str | None = Query(None),
 ):
-    """Returns paginated 1st-degree connections for the user."""
+    """Returns paginated 1st-degree connections for the authenticated user."""
+    user_id = current_user["id"]
     skip = (page - 1) * page_size
 
-    # Base pattern
     match_clause = "MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)"
     where_clauses = []
     params = {"user_id": user_id, "skip": skip, "limit": page_size}
@@ -28,11 +28,11 @@ def get_connections(
         params["search"] = search
 
     if company:
-        # Check if the person works at this specific company
         where_clauses.append("EXISTS { (p)-[:WORKS_AT]->(:Company {name: $company}) }")
         params["company"] = company
 
     where_str = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
 
     # 1. Get total count
     count_query = f"{match_clause}{where_str} RETURN count(p) as total"
@@ -40,6 +40,7 @@ def get_connections(
     total_count = count_result[0]["total"] if count_result else 0
 
     # 2. Get paginated results
+
     results_query = f"""
         {match_clause}{where_str}
         OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
@@ -67,10 +68,11 @@ def get_connections(
 
 
 @router.get("/companies")
-def get_user_companies(user_id: str = Query(...)):
-    """Returns all unique companies for the user's 1st-degree connections."""
-    results = db.run(
-        """
+def get_user_companies(current_user: dict = Depends(get_current_user)):
+    """Returns all unique companies for the authenticated user's 1st-degree connections."""
+    user_id = current_user["id"]
+    results = db.run("""
+
         MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
         RETURN DISTINCT c.name as name
         ORDER BY name
@@ -81,10 +83,13 @@ def get_user_companies(user_id: str = Query(...)):
 
 
 @router.get("/stats")
-def get_stats(user_id: str = Query(...)):
-    """Returns summary stats for the dashboard."""
-    person_count = db.run(
-        """
+
+def get_stats(current_user: dict = Depends(get_current_user)):
+    """Returns summary stats for the authenticated user's dashboard."""
+    user_id = current_user["id"]
+    
+    person_count = db.run("""
+
         MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)
         RETURN count(p) as count
     """,
@@ -127,14 +132,10 @@ def get_stats(user_id: str = Query(...)):
 
 
 @router.get("/overview")
-def get_graph_overview(user_id: str = Query(...)):
+def get_graph_overview(current_user: dict = Depends(get_current_user)):
     """
-    Returns the full graph for the network visualizer with nodes + links.
-
-    Instead of only expanding from a single user node, this endpoint
-    pulls in ALL networks for the given owner (user_id), so that every
-    uploaded CSV / source network is represented in the graph.
-
+    Returns the full graph for the authenticated user's network visualizer.
+    
     We:
       - Find all root/source persons where owner_user_id == user_id
         (including the primary user).
@@ -142,6 +143,7 @@ def get_graph_overview(user_id: str = Query(...)):
       - Attach their companies via WORKS_AT.
       - Add KNOWS edges between any collected people.
     """
+    user_id = current_user["id"]
 
     # 1. Fetch all root/source persons for this owner (primary + imported networks)
     root_rows = db.run(
@@ -167,6 +169,7 @@ def get_graph_overview(user_id: str = Query(...)):
     user_node = dict(user_node_row["root"])
     user_name = user_node.get("name", "You")
 
+
     # 2. Collect all people within up to 2 KNOWS hops of ANY root
     people_rows = db.run(
         """
@@ -181,6 +184,7 @@ def get_graph_overview(user_id: str = Query(...)):
     """,
         owner_id=user_id,
     )
+
 
     # 3. Attach companies for all collected people
     person_ids: list[str] = [dict(r["p"]).get("id") for r in people_rows if dict(r["p"]).get("id")]
@@ -209,6 +213,7 @@ def get_graph_overview(user_id: str = Query(...)):
     seen_nodes: set[str] = set()
     seen_companies: set[str] = set()
 
+
     # Central user node
     nodes.append(
         {
@@ -222,6 +227,7 @@ def get_graph_overview(user_id: str = Query(...)):
         }
     )
     seen_nodes.add(user_node.get("id", user_id))
+
 
     # 4. Add all person + company nodes and WORKS_AT links
     for r in people_rows:
@@ -248,8 +254,16 @@ def get_graph_overview(user_id: str = Query(...)):
             )
             seen_nodes.add(pid)
 
-        # Companies for this person
-        for company in companies_by_person.get(pid, []):
+
+            links.append({
+                "source": user_id,
+                "target": pid,
+                "label": "KNOWS",
+            })
+
+        company = dict(r["c"]) if r.get("c") else None
+        if company:
+
             cname = company.get("name", "")
             if not cname:
                 continue
@@ -301,15 +315,21 @@ def get_graph_overview(user_id: str = Query(...)):
                 }
             )
 
+
     return {"nodes": nodes, "links": links}
 
 
 @router.get("/company/{company_name}")
-def get_company_subgraph(company_name: str, user_id: str = Query(...)):
+def get_company_subgraph(
+    company_name: str,
+    current_user: dict = Depends(get_current_user)
+):
     """Returns the subgraph relevant to a specific company search."""
-    result = db.run(
-        """
-        MATCH (u:Person {id: $user_id})-[:KNOWS*1..3]->(p:Person)-[:WORKS_AT]->(c:Company)
+
+    user_id = current_user["id"]
+    result = db.run("""
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+
         WHERE toLower(c.name) CONTAINS toLower($company)
         RETURN u, p, c
     """,
