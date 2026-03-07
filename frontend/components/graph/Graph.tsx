@@ -1,7 +1,8 @@
 "use client"
-import React, { useEffect, useRef, useState, useCallback } from "react"
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import axios from "axios"
 import dynamic from "next/dynamic"
+import { Search, X } from "lucide-react"
 
 // @ts-ignore - dynamic import without types
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d").then(mod => mod.default || mod), { ssr: false })
@@ -68,6 +69,65 @@ export default function Graph({ width, height }: Props) {
   const [data, setData] = useState<GraphData>({ nodes: [], links: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isFocused, setIsFocused] = useState(false)
+
+  // Collect all company names for autocomplete
+  const companyNames = useMemo(() => {
+    return data.nodes
+      .filter(n => n.type === "company")
+      .map(n => n.name)
+      .sort((a, b) => a.localeCompare(b))
+  }, [data.nodes])
+
+  // Filtered suggestions based on typed query
+  const suggestions = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    const q = searchQuery.toLowerCase()
+    return companyNames.filter(name => name.toLowerCase().includes(q)).slice(0, 8)
+  }, [searchQuery, companyNames])
+
+  // Pruned graph data: only matched company, its connections, and the user node
+  const filteredData = useMemo<GraphData>(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return data
+
+    // Find all company nodes that match
+    const matchedCompanyIds = new Set(
+      data.nodes
+        .filter(n => n.type === "company" && n.name.toLowerCase().includes(q))
+        .map(n => n.id)
+    )
+
+    if (matchedCompanyIds.size === 0) return data
+
+    // Find all people connected to matched companies via WORKS_AT links
+    const connectedPersonIds = new Set<string>()
+    data.links.forEach(link => {
+      const srcId = typeof link.source === "string" ? link.source : link.source.id
+      const tgtId = typeof link.target === "string" ? link.target : link.target.id
+      if (matchedCompanyIds.has(tgtId)) connectedPersonIds.add(srcId)
+      if (matchedCompanyIds.has(srcId)) connectedPersonIds.add(tgtId)
+    })
+
+    // Always keep the user node
+    const userNode = data.nodes.find(n => n.type === "user")
+    if (userNode) connectedPersonIds.add(userNode.id)
+
+    // Keep: matched companies + connected people + user
+    const keepIds = new Set<string>()
+    matchedCompanyIds.forEach(id => keepIds.add(id))
+    connectedPersonIds.forEach(id => keepIds.add(id))
+
+    const nodes = data.nodes.filter(n => keepIds.has(n.id))
+    const links = data.links.filter(link => {
+      const srcId = typeof link.source === "string" ? link.source : link.source.id
+      const tgtId = typeof link.target === "string" ? link.target : link.target.id
+      return keepIds.has(srcId) && keepIds.has(tgtId)
+    })
+
+    return { nodes, links }
+  }, [data, searchQuery])
 
   useEffect(() => {
     let mounted = true
@@ -216,27 +276,85 @@ export default function Graph({ width, height }: Props) {
   }
 
   return (
-    <ForceGraph2D
-      ref={fgRef}
-      graphData={data}
-      width={width}
-      height={height}
-      backgroundColor="rgba(0,0,0,0)"
-      nodeCanvasObject={paintNode}
-      nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-        const r = NODE_SIZES[node.type as string] || 5
-        ctx.beginPath()
-        ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI)
-        ctx.fillStyle = color
-        ctx.fill()
-      }}
-      linkCanvasObject={paintLink}
-      linkDirectionalArrowLength={4}
-      linkDirectionalArrowRelPos={0.9}
-      onNodeClick={handleNodeClick}
-      cooldownTicks={100}
-      d3AlphaDecay={0.02}
-      d3VelocityDecay={0.3}
-    />
+    <div className="relative w-full h-full">
+      {/* Search Bar */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-80">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+            placeholder="Search companies..."
+            className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-dark-bg/90 backdrop-blur-md border border-dark-glassBorder text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Autocomplete Dropdown */}
+        {isFocused && suggestions.length > 0 && (
+          <div className="mt-1 rounded-xl bg-dark-bg/95 backdrop-blur-md border border-dark-glassBorder overflow-hidden shadow-lg">
+            {suggestions.map(name => (
+              <button
+                key={name}
+                onMouseDown={() => {
+                  setSearchQuery(name)
+                  setIsFocused(false)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-brand-500/20 hover:text-white transition-colors flex items-center gap-2"
+              >
+                <div className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Active filter badge */}
+        {searchQuery && filteredData !== data && (
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <span className="text-xs text-zinc-400 bg-dark-bg/80 backdrop-blur-sm px-3 py-1 rounded-full border border-dark-glassBorder">
+              Showing <span className="text-brand-400 font-medium">{filteredData.nodes.length}</span> nodes
+              {" · "}
+              <button onClick={() => setSearchQuery("")} className="text-accent-cyan hover:text-white transition-colors">
+                Clear filter
+              </button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      <ForceGraph2D
+        ref={fgRef}
+        graphData={filteredData}
+        width={width}
+        height={height}
+        backgroundColor="rgba(0,0,0,0)"
+        nodeCanvasObject={paintNode}
+        nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+          const r = NODE_SIZES[node.type as string] || 5
+          ctx.beginPath()
+          ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI)
+          ctx.fillStyle = color
+          ctx.fill()
+        }}
+        linkCanvasObject={paintLink}
+        linkDirectionalArrowLength={4}
+        linkDirectionalArrowRelPos={0.9}
+        onNodeClick={handleNodeClick}
+        cooldownTicks={100}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+      />
+    </div>
   )
 }
