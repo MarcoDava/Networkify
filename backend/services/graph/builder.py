@@ -9,6 +9,7 @@ import hashlib
 import re
 import logging
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from db.neo4j_client import db
 from config import settings
 
@@ -64,6 +65,37 @@ def company_to_url(company_name: str) -> str:
     _company_url_cache[company_name] = ""
     return ""
 
+
+def _resolve_company_urls_batch(company_names: list[str], max_workers: int = 10) -> dict[str, str]:
+    """Resolve URLs for a list of *unique* company names in parallel threads.
+    Uses the in-process cache and only makes HTTP calls for cache misses."""
+    results: dict[str, str] = {}
+    to_fetch: list[str] = []
+
+    for name in company_names:
+        if not name:
+            continue
+        if name in _company_url_cache:
+            results[name] = _company_url_cache[name]
+        else:
+            to_fetch.append(name)
+
+    if not to_fetch:
+        return results
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_name = {executor.submit(company_to_url, name): name for name in to_fetch}
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                results[name] = future.result()
+            except Exception as e:
+                logger.warning("Error resolving URL for '%s': %s", name, e)
+                results[name] = ""
+
+    return results
+
+
 def parse_csv(file_bytes: bytes) -> pd.DataFrame:
     import io
     # LinkedIn CSVs have a 3-line header — skip it
@@ -73,7 +105,11 @@ def parse_csv(file_bytes: bytes) -> pd.DataFrame:
     
     # User-defined fields
     df["Initials"] = df["First Name"].str[0] + df["Last Name"].str[0]
-    df["CompanyURL"] = df["Company"].apply(company_to_url)
+
+    # Deduplicate company names and resolve URLs in parallel
+    unique_companies = df["Company"].dropna().unique().tolist()
+    url_map = _resolve_company_urls_batch(unique_companies)
+    df["CompanyURL"] = df["Company"].map(url_map).fillna("")
     
     return df
 
