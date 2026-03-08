@@ -2,8 +2,6 @@
 
 <img width="944" height="753" alt="Screenshot 2026-03-08 041726" src="https://github.com/user-attachments/assets/d4cbffee-d349-49f4-985f-ec394d99cd0f" />
 
-**Networkify** is a networking-powered job discovery platform that helps people find opportunities through their professional network instead of blindly applying to jobs. Unlike LinkedIn, which simply lists connections, Networkify transforms professional network data into an interactive graph that visualizes how people and companies are connected. This allows users to instantly see who they know at a company and identify the **strongest referral path** through first, second or third-degree connections to reach the right person.
-
 ## Inspiration
 The job search process for many looks like the following:
 
