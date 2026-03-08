@@ -65,17 +65,160 @@ const NODE_SIZES_3D: Record<string, number> = {
 }
 
 const logoCache = new Map<string, HTMLImageElement | null>()
+const logoLoadCallbacks = new Map<string, (() => void)[]>()
 
-function loadLogo(url: string): HTMLImageElement | null {
+function loadLogo(url: string, onLoad?: () => void): HTMLImageElement | null {
   if (!url) return null
-  if (logoCache.has(url)) return logoCache.get(url)!
-  logoCache.set(url, null)
-  const img = new Image()
-  img.crossOrigin = "anonymous"
-  img.onload = () => logoCache.set(url, img)
-  img.onerror = () => logoCache.set(url, null)
-  img.src = url
-  return null
+  
+  if (logoCache.has(url)) {
+    const cached = logoCache.get(url)
+    if (cached && onLoad) onLoad()
+    return cached!
+  }
+  
+  if (onLoad) {
+    const callbacks = logoLoadCallbacks.get(url) || []
+    callbacks.push(onLoad)
+    logoLoadCallbacks.set(url, callbacks)
+  }
+  
+  if (!logoCache.has(url)) {
+    logoCache.set(url, null)
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      logoCache.set(url, img)
+      const callbacks = logoLoadCallbacks.get(url) || []
+      callbacks.forEach(cb => cb())
+      logoLoadCallbacks.delete(url)
+    }
+    img.onerror = () => {
+      logoCache.set(url, null)
+      logoLoadCallbacks.delete(url)
+    }
+    img.src = url
+  }
+  
+  return logoCache.get(url) || null
+}
+
+function createPersonSprite(
+  initials: string,
+  name: string,
+  bgColor: string,
+  isRecruiter: boolean = false,
+  isUser: boolean = false
+): THREE.Sprite {
+  const canvas = document.createElement("canvas")
+  const size = 256
+  canvas.width = size * 2
+  canvas.height = size * 2
+  const ctx = canvas.getContext("2d")!
+  
+  const centerX = size
+  const centerY = size * 0.65
+  const radius = size * 0.4
+  
+  if (isUser) {
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius + 20, 0, Math.PI * 2)
+    ctx.fillStyle = "rgba(139, 92, 246, 0.35)"
+    ctx.fill()
+  }
+  
+  if (isRecruiter) {
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius + 10, 0, Math.PI * 2)
+    ctx.strokeStyle = "#10B981"
+    ctx.lineWidth = 8
+    ctx.stroke()
+  }
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+  ctx.fillStyle = bgColor
+  ctx.fill()
+  
+  ctx.font = `bold ${size * 0.28}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+  ctx.fillStyle = "#FFFFFF"
+  ctx.fillText(initials, centerX, centerY)
+  
+  ctx.font = `bold ${size * 0.11}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  ctx.fillStyle = "#E4E4E7"
+  const displayName = name.length > 18 ? name.substring(0, 17) + "…" : name
+  ctx.fillText(displayName, centerX, centerY + radius + 20)
+  
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(24, 24, 1)
+  
+  return sprite
+}
+
+function createCompanySprite(
+  name: string,
+  logoImg: HTMLImageElement | null,
+  fallbackInitials: string
+): THREE.Sprite {
+  const canvas = document.createElement("canvas")
+  const size = 256
+  canvas.width = size * 2
+  canvas.height = size * 2
+  const ctx = canvas.getContext("2d")!
+  
+  const centerX = size
+  const centerY = size * 0.65
+  const radius = size * 0.4
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius + 6, 0, Math.PI * 2)
+  ctx.strokeStyle = "#F59E0B"
+  ctx.lineWidth = 8
+  ctx.stroke()
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+  ctx.fillStyle = "#1a1a2e"
+  ctx.fill()
+  
+  if (logoImg) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius - 8, 0, Math.PI * 2)
+    ctx.clip()
+    const imgSize = (radius - 8) * 2
+    ctx.drawImage(logoImg, centerX - imgSize / 2, centerY - imgSize / 2, imgSize, imgSize)
+    ctx.restore()
+  } else {
+    ctx.font = `bold ${size * 0.25}px Inter, Arial, sans-serif`
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.fillStyle = "#F59E0B"
+    ctx.fillText(fallbackInitials, centerX, centerY)
+  }
+  
+  ctx.font = `bold ${size * 0.12}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  ctx.fillStyle = "#FCD34D"
+  const displayName = name.length > 18 ? name.substring(0, 17) + "…" : name
+  ctx.fillText(displayName, centerX, centerY + radius + 20)
+  
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(24, 24, 1)
+  
+  return sprite
 }
 
 export default function Graph({ width, height, initialZoom, default3D = false, activeFilter = null }: Props) {
@@ -91,6 +234,7 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hasInitialZoomed, setHasInitialZoomed] = useState(false)
   const [is3D, setIs3D] = useState(default3D)
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false)
 
   // Collect all searchable names for autocomplete (companies + people)
   const searchableNames = useMemo(() => {
@@ -258,6 +402,7 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
   }, [is3D])
 
   const handleEngineStop = useCallback(() => {
+    setIsSwitchingMode(false)
     if (initialZoom && !hasInitialZoomed && fgRef.current && data.nodes.length > 0) {
       setHasInitialZoomed(true)
       const userNode = data.nodes.find(n => n.type === "user")
@@ -376,8 +521,8 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
   }, [])
 
   const create3DNode = useCallback((node: any) => {
-    const size = NODE_SIZES_3D[node.type as string] || 4
     const color = NODE_COLORS[node.type as string] || "#888"
+    const size = NODE_SIZES_3D[node.type as string] || 4
     
     const group = new THREE.Group()
 
@@ -490,18 +635,53 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
 
   return (
     <div className="relative w-full h-full">
+      {/* Mode Switching Overlay */}
+      {isSwitchingMode && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-dark-bg/90 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-zinc-400">Switching view mode...</p>
+          </div>
+        </div>
+      )}
+
       {/* 2D/3D Toggle */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-32 z-10 flex rounded-xl overflow-hidden border border-dark-glassBorder bg-dark-bg/90 backdrop-blur-md">
         <button
           onClick={() => {
-            setIs3D(!is3D)
-            setHasInitialZoomed(false)
+            if (is3D) {
+              setIsSwitchingMode(true)
+              setIs3D(false)
+              setHasInitialZoomed(false)
+            }
           }}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-dark-bg/90 backdrop-blur-md border border-dark-glassBorder text-sm text-zinc-300 hover:text-white hover:border-brand-500 transition-all"
-          title={is3D ? "Switch to 2D" : "Switch to 3D"}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-all ${
+            !is3D 
+              ? "bg-brand-600 text-white" 
+              : "text-zinc-400 hover:text-white hover:bg-dark-elevated"
+          }`}
+          title="2D View"
         >
-          {is3D ? <Square className="w-4 h-4" /> : <Box className="w-4 h-4" />}
-          <span>{is3D ? "2D" : "3D"}</span>
+          <Square className="w-4 h-4" />
+          <span>2D</span>
+        </button>
+        <button
+          onClick={() => {
+            if (!is3D) {
+              setIsSwitchingMode(true)
+              setIs3D(true)
+              setHasInitialZoomed(false)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-all ${
+            is3D 
+              ? "bg-brand-600 text-white" 
+              : "text-zinc-400 hover:text-white hover:bg-dark-elevated"
+          }`}
+          title="3D View"
+        >
+          <Box className="w-4 h-4" />
+          <span>3D</span>
         </button>
       </div>
 
@@ -649,15 +829,39 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
                 Draft Message
               </button>
               {selectedNode.profile_url && (
-                <a
-                  href={selectedNode.profile_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={async () => {
+                    // Find the company this person works at
+                    const worksAtLink = data.links.find(link => {
+                      const srcId = typeof link.source === "string" ? link.source : link.source.id
+                      return srcId === selectedNode.id && link.label === "WORKS_AT"
+                    })
+                    const companyId = worksAtLink
+                      ? (typeof worksAtLink.target === "string" ? worksAtLink.target : worksAtLink.target.id)
+                      : ""
+                    const companyNode = companyId ? data.nodes.find(n => n.id === companyId) : null
+                    const companyName = companyNode?.name || ""
+                    
+                    // Log the LinkedIn visit
+                    try {
+                      const axios = await getAuthAxios()
+                      await axios.post("/api/messages/visit", {
+                        person_id: selectedNode.id,
+                        person_name: selectedNode.name,
+                        company_name: companyName
+                      })
+                    } catch (e) {
+                      console.error("Failed to log LinkedIn visit:", e)
+                    }
+                    
+                    // Open LinkedIn profile
+                    window.open(selectedNode.profile_url, "_blank", "noopener,noreferrer")
+                  }}
                   className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#0A66C2]/80 text-white text-sm font-medium transition-colors"
                 >
                   <ExternalLink className="w-4 h-4" />
                   View LinkedIn Profile
-                </a>
+                </button>
               )}
             </div>
           )}

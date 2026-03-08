@@ -1,9 +1,9 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  Waypoints, ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight, Maximize2
+  Waypoints, ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight, Maximize2, X
 } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
 import Graph from "@/components/graph/Graph"
@@ -20,7 +20,7 @@ interface MetricBarProps {
 }
 
 
-function MetricBar({ icon, label, value, target, percentage, color }: MetricBarProps) {
+function MetricBar({ icon, label, value, target, percentage, color, barColor }: MetricBarProps & { barColor: string }) {
   return (
     <div className="bg-dark-surface rounded-2xl p-4">
       <div className="flex items-center gap-3 mb-3">
@@ -35,7 +35,7 @@ function MetricBar({ icon, label, value, target, percentage, color }: MetricBarP
       </div>
       <div className="h-1.5 bg-dark-elevated rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${color.replace('bg-', 'bg-').replace('/20', '')}`}
+          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
           style={{ width: `${percentage}%` }}
         />
       </div>
@@ -89,47 +89,171 @@ export default function Dashboard() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
   const getAuthAxios = useAuthenticatedAxios()
   const [currentMonth] = useState(new Date())
-  const [activeTime, setActiveTime] = useState("00:00:00")
-  const [pathsFound, setPathsFound] = useState(0)
-  const [bestDay, setBestDay] = useState(new Date().toLocaleDateString())
+  const [activeSeconds, setActiveSeconds] = useState(0)
+  const [connectionsMade, setConnectionsMade] = useState(0)
+  const [bestDay, setBestDay] = useState("—")
   const [messagesSent, setMessagesSent] = useState(0)
-  const [responseRate, setResponseRate] = useState(0)
+  const [connectionsVisited, setConnectionsVisited] = useState(0)
+  const [companiesVisited, setCompaniesVisited] = useState(0)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveTime(new Date().toLocaleTimeString())
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
+  const [connectionHeatmap, setConnectionHeatmap] = useState<Record<number, number>>({})
+  const [weeklyData, setWeeklyData] = useState<{ day: string; height: number; isActive?: boolean }[]>(
+    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => ({ day: d, height: 0 }))
+  )
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showUI, setShowUI] = useState(true)
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Fetch real message stats
+  // Handle Escape key to exit fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false)
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isFullscreen])
+  const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const unsavedSecondsRef = useRef(0)
+  const initialLoadDone = useRef(false)
+
+  // Fetch stored active time on load
+  useEffect(() => {
+    if (!isAuthenticated || authLoading || initialLoadDone.current) return
+    async function fetchActiveTime() {
+      try {
+        const axios = await getAuthAxios()
+        const res = await axios.get("/api/messages/active-time")
+        setActiveSeconds(res.data.total_seconds || 0)
+        initialLoadDone.current = true
+      } catch (e) {
+        console.error("Failed to fetch active time:", e)
+        initialLoadDone.current = true
+      }
+    }
+    fetchActiveTime()
+  }, [isAuthenticated, authLoading, getAuthAxios])
+
+  // Save active time to backend periodically (every 30 seconds) and on unmount
+  const saveActiveTime = useCallback(async () => {
+    if (unsavedSecondsRef.current <= 0 || !isAuthenticated) return
+    const secondsToSave = unsavedSecondsRef.current
+    unsavedSecondsRef.current = 0
+    try {
+      const axios = await getAuthAxios()
+      await axios.post("/api/messages/active-time", { seconds: secondsToSave })
+    } catch (e) {
+      unsavedSecondsRef.current += secondsToSave
+      console.error("Failed to save active time:", e)
+    }
+  }, [isAuthenticated, getAuthAxios])
+
+  // Active time tracking – counts seconds while the page is visible
+  useEffect(() => {
+    const tick = () => {
+      setActiveSeconds(s => s + 1)
+      unsavedSecondsRef.current += 1
+    }
+    const start = () => { if (!activeTimerRef.current) activeTimerRef.current = setInterval(tick, 1000) }
+    const stop = () => { if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null } }
+
+    start()
+    saveTimerRef.current = setInterval(saveActiveTime, 30000)
+
+    const onVis = () => (document.hidden ? stop() : start())
+    document.addEventListener("visibilitychange", onVis)
+    
+    const onBeforeUnload = () => { saveActiveTime() }
+    window.addEventListener("beforeunload", onBeforeUnload)
+
+    return () => { 
+      stop()
+      if (saveTimerRef.current) clearInterval(saveTimerRef.current)
+      saveActiveTime()
+      document.removeEventListener("visibilitychange", onVis)
+      window.removeEventListener("beforeunload", onBeforeUnload)
+    }
+  }, [saveActiveTime])
+
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600).toString().padStart(2, "0")
+    const m = Math.floor((s % 3600) / 60).toString().padStart(2, "0")
+    const sec = (s % 60).toString().padStart(2, "0")
+    return `${h}:${m}:${sec}`
+  }
+
+  // Fetch real stats
   useEffect(() => {
     if (!isAuthenticated || authLoading) return
     async function fetchStats() {
       try {
         const axios = await getAuthAxios()
-        const res = await axios.get("/api/messages/stats")
-        setMessagesSent(res.data.messages_sent || 0)
+        const [messagesRes, visitsRes, dailyRes] = await Promise.all([
+          axios.get("/api/messages/stats"),
+          axios.get("/api/messages/visit-stats"),
+          axios.get("/api/messages/daily-visits"),
+        ])
+        setMessagesSent(messagesRes.data.messages_sent || 0)
+        setConnectionsVisited(visitsRes.data.connections_visited || 0)
+        setCompaniesVisited(visitsRes.data.companies_visited || 0)
+
+        // Heatmap
+        const daily: Record<string, number> = dailyRes.data.daily || {}
+        const heatmap: Record<number, number> = {}
+        let totalMonth = 0
+        let maxCount = 0
+        let maxDay = 0
+        for (const [dayStr, count] of Object.entries(daily)) {
+          const d = parseInt(dayStr, 10)
+          heatmap[d] = count as number
+          totalMonth += count as number
+          if ((count as number) > maxCount) { maxCount = count as number; maxDay = d }
+        }
+        setConnectionHeatmap(heatmap)
+        setConnectionsMade(totalMonth)
+
+        // Best day
+        if (maxDay > 0) {
+          const yr = dailyRes.data.year
+          const mo = dailyRes.data.month
+          const date = new Date(yr, mo - 1, maxDay)
+          setBestDay(date.toLocaleDateString(undefined, { month: "short", day: "numeric" }))
+        }
+
+        // Weekly bars (last 7 days)
+        const today = new Date()
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        const bars: { day: string; height: number; isActive?: boolean }[] = []
+        const weekCounts: number[] = []
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(today)
+          d.setDate(today.getDate() - i)
+          weekCounts.push(heatmap[d.getDate()] || 0)
+          bars.push({ day: dayNames[d.getDay()], height: 0, isActive: i === 0 })
+        }
+        const maxWeek = Math.max(...weekCounts, 1)
+        bars.forEach((b, idx) => { b.height = Math.round((weekCounts[idx] / maxWeek) * 100) })
+        setWeeklyData(bars)
       } catch (e) {
-        console.error("Failed to fetch message stats:", e)
+        console.error("Failed to fetch stats:", e)
       }
     }
     fetchStats()
   }, [isAuthenticated, authLoading, getAuthAxios])
-  const weeklyData = [//Needs to be set to real values
-    { day: "Sun", height: 40 },
-    { day: "Mon", height: 65 },
-    { day: "Tue", height: 45 },
-    { day: "Wed", height: 80 },
-    { day: "Thu", height: 55 },
-    { day: "Fri", height: 90, isActive: true },
-    { day: "Sat", height: 35 },
-  ]
 
 
   const metrics = {
-    connections: { value: "0", target: "7", percentage: 0 },
-    companies: { value: "0", target: "5", percentage: 0 },
+    connections: { 
+      value: connectionsVisited.toString(), 
+      target: "7", 
+      percentage: Math.min(100, Math.round((connectionsVisited / 7) * 100)) 
+    },
+    companies: { 
+      value: companiesVisited.toString(), 
+      target: "5", 
+      percentage: Math.min(100, Math.round((companiesVisited / 5) * 100)) 
+    },
   }
 
 
@@ -139,31 +263,6 @@ export default function Dashboard() {
   })
 
 
-  // Heatmap data: day -> number of connections (1-7)
-  const connectionHeatmap: Record<number, number> = {
-    1: 2,
-    3: 5,
-    4: 7,
-    5: 3,
-    8: 1,
-    10: 6,
-    11: 4,
-    12: 7,
-    14: 2,
-    15: 3,
-    17: 5,
-    18: 1,
-    20: 4,
-    22: 6,
-    23: 2,
-    25: 7,
-    27: 3,
-    28: 5,
-    30: 4,
-  }
-
-
-  // Get heatmap color based on connection count (1-7)
   const getHeatmapColor = (connections: number): string => {
     const colors: Record<number, string> = {
       1: "bg-purple-500/20",
@@ -174,18 +273,29 @@ export default function Dashboard() {
       6: "bg-purple-500/85",
       7: "bg-purple-500",
     }
-    return colors[connections] || ""
+    return colors[Math.min(connections, 7)] || ""
   }
 
 
   return (
-    <div className="flex h-screen bg-dark-bg overflow-hidden">
-      <Sidebar />
+    <div className={`flex h-screen bg-dark-bg overflow-hidden ${isFullscreen ? "p-0" : ""}`}>
+      {showUI && !isFullscreen && <Sidebar />}
 
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="max-w-7xl mx-auto grid grid-cols-12 gap-4 auto-rows-min">
+      <main className={`flex-1 overflow-auto transition-all duration-300 ${isFullscreen ? "p-0" : "p-6"}`}>
+        {/* Reveal UI Button */}
+        {!showUI && !isFullscreen && (
+          <button
+            onClick={() => setShowUI(true)}
+            className="fixed top-4 right-4 z-[100] px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium shadow-lg transition-all"
+          >
+            Reveal UI
+          </button>
+        )}
+
+        <div className={`${isFullscreen ? "w-full h-full" : "max-w-7xl mx-auto"} grid grid-cols-12 gap-4 auto-rows-min h-full`}>
          
-          <div className="col-span-12 lg:col-span-5 bg-dark-surface rounded-3xl p-6">
+          {showUI && !isFullscreen && (
+            <div className="col-span-12 lg:col-span-5 bg-dark-surface rounded-3xl p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-white">Network Activity</h2>
               <button className="w-8 h-8 rounded-lg bg-dark-elevated flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
@@ -212,7 +322,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-7 gap-2 mb-6">
               {calendarDays.map((day, i) => {
                 const connections = day ? connectionHeatmap[day] : undefined
-                const isToday = day === 17
+                const isToday = day === new Date().getDate()
                 const heatmapColor = connections ? getHeatmapColor(connections) : ""
                
                 return (
@@ -260,32 +370,58 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-dark-glassBorder">
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Active time</p>
-                <p className="text-lg font-semibold text-white">{activeTime}</p>
+                <p className="text-lg font-semibold text-white">{formatTime(activeSeconds)}</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500 mb-1">Paths found</p>
-                <p className="text-lg font-semibold text-white">{pathsFound}</p>
+                <p className="text-xs text-zinc-500 mb-1">Connections made</p>
+                <p className="text-lg font-semibold text-white">{connectionsMade}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Best day</p>
                 <p className="text-lg font-semibold text-white">{bestDay}</p>
               </div>
             </div>
-          </div>
-                {/* TODO: 3D GRAPH GOES HERE */}
-          <div className="col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 relative overflow-hidden min-h-[360px] group">
-              <Link 
-                href="/graph?zoom=true"
-                className="absolute top-4 right-4 z-20 w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all opacity-0 group-hover:opacity-100"
-                title="Fullscreen Graph"
-              >
-                <Maximize2 className="w-5 h-5" />
-              </Link>
-              <Graph width={dimensions.width} height={dimensions.height} />
+            </div>
+          )}
+
+          {/* Graph Section */}
+          <div className={`${
+            isFullscreen 
+              ? "fixed inset-0 z-50 bg-dark-bg" 
+              : "col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 min-h-[360px]"
+            } relative overflow-hidden group transition-all duration-300`}
+          >
+              <div className="absolute top-4 right-4 z-[60] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Fullscreen Toggle */}
+                <button 
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  className="w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all"
+                  title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Graph"}
+                >
+                  {isFullscreen ? <X className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+
+                {/* Hide UI Toggle (only visible when not in actual OS fullscreen, but we use it as a 'Zen' mode) */}
+                {!isFullscreen && (
+                  <button 
+                    onClick={() => setShowUI(false)}
+                    className="w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all"
+                    title="Hide UI"
+                  >
+                    <Zap className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              <Graph 
+                width={isFullscreen ? (typeof window !== 'undefined' ? window.innerWidth : 1200) : dimensions.width} 
+                height={isFullscreen ? (typeof window !== 'undefined' ? window.innerHeight : 800) : dimensions.height} 
+              />
             </div>
 
-
-          <div className="col-span-12 lg:col-span-5 space-y-4">
+          {showUI && !isFullscreen && (
+            <>
+              <div className="col-span-12 lg:col-span-5 space-y-4">
             <MetricBar
               icon={<Droplets className="w-5 h-5 text-accent-cyan" />}
               label="Connections"
@@ -293,6 +429,7 @@ export default function Dashboard() {
               target={metrics.connections.target}
               percentage={metrics.connections.percentage}
               color="bg-accent-cyan/20"
+              barColor="bg-accent-cyan"
             />
             <MetricBar
               icon={<Zap className="w-5 h-5 text-accent-amber" />}
@@ -301,6 +438,7 @@ export default function Dashboard() {
               target={metrics.companies.target}
               percentage={metrics.companies.percentage}
               color="bg-accent-amber/20"
+              barColor="bg-accent-amber"
             />
           </div>
 
@@ -330,17 +468,8 @@ export default function Dashboard() {
               color="bg-accent-amber/20"
             />
           </div>
-
-
-          <div className="col-span-6 lg:col-span-3 grid grid-cols-1 gap-4">
-            <StatCard
-              icon={<Droplets className="w-5 h-5 text-accent-cyan" />}
-              value={responseRate.toString()}
-              label="Response Rate"
-              color="bg-accent-cyan/20"
-            />
-          </div>
-
+        </>
+      )}
 
         </div>
       </main>

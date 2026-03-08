@@ -1,49 +1,89 @@
-# 🚀 Network Smarter (HackCanada2026)
+# Networkify
 
-*A Web App that helps users network smarter by turning their LinkedIn Connections CSV into a searchable, actionable company graph.*
-
-You upload your contacts, search a target company (e.g. Google), and the app maps the most efficient connections, recruiters to contact, and even drafts the perfect AI-generated outreach message.
+**Networkify** is a networking-powered job discovery platform that helps people find opportunities through their professional network instead of blindly applying to jobs. Unlike LinkedIn, which simply lists connections, Networkify transforms professional network data into an interactive graph that visualizes how people and companies are connected. This allows users to instantly see who they know at a company and identify the **strongest referral path** through first, second or third-degree connections to reach the right person.
 
 ---
 
-## 🏗 Why It Wins (Top 3 Pitch Points)
+## The Problem
 
-1. **Referral Path Engine**: Finds the smartest path through your network to reach a company, mapped beautifully through 1st- and 2nd-degree connections.
-2. **Networking Strategy Engine**: Ranks the best people to contact based on relationship strength and generates exact reasoning for why they are the best fit.
-3. **Multi-Source Career Graph**: Builds a unified professional network using Neo4j graph databases rather than static SQL tables.
+Many Canadians struggle with the current job search process:
 
-## 💻 Tech Stack & API Sponsors
+- Job seekers often send **dozens or hundreds of applications with little response**
+- Many listings online are **ghost jobs that are not actively hiring**
+- People frequently **do not realize they already know someone at a company**
+- Networking outreach is usually **unstructured and ineffective**
 
-We built this project specifically keeping the sponsor tracks and minimal, highly-effective tech in mind.
-
-### Core Stack
-- **Frontend**: Next.js 14, React, Tailwind CSS (Glassmorphism UI)
-- **Backend**: Python, FastAPI, Pandas (for heavy CSV processing)
-- **Database**: Neo4j (Graph Database for People → Company relationships)
-
-### Sponsor Integrations
-- **Cloudinary ("Relationship Map")**: Dynamically generates unique, branded OG images of a user's specific "Google Connection Path" so they can share their referral routes.
-- **Auth0 ("Shadow Auth")**: Identity management that explicitly matches login emails against the uploaded CSV data for access control.
-- **Vultr ("The Cold Start Worker")**: Cloud instance dedicated to running the heavy Pandas DataFrame processing to keep the frontend completely fluid.
-- **ElevenLabs ("The Pitch Coach")**: Generates an audio snippet of how the user should verbally introduce themselves if they meet their networking contact in person.
-- **Gemini API ("Ghost Job Analyst")**: Uses Gemini's large context window to compare job posting URLs against the user's network graph to detect "Ghost Jobs" (roles that no one in the network actually knows about).
-- **Tailscale ("Secure Lab")**: Secures the transfer of PII (Personally Identifiable Information) from the local machine to the Vultr instance via a Tailscale Funnel.
+As a result, job seekers spend significant time applying to roles without leveraging the **most powerful hiring mechanism: referrals**.
 
 ---
 
-## 📁 Repository Structure
+## Solution
 
-```
-HackCanada2026/
-├── frontend/             # Next.js UI (Dashboard, Referral Paths, Upload)
-├── backend/              # FastAPI & Pandas Processing (Python)
-├── neo4j/                # Graph Database configuration
-├── extension/            # Chrome Extension for 2nd-degree LinkedIn traversal
-├── docker-compose.yml    # Local neo4j container definition
-└── README.md             # You are here
-```
+Networkify converts professional connection data into a **visual relationship graph** that reveals hidden networking opportunities. By analyzing the structure of the network, the platform identifies the **most strategic path to a referral**, helping users connect with the right people instead of relying on cold applications.
 
-## 🚀 Quick Start
+---
+
+## Key Features
+
+### 🔗 Referral Path Engine
+- Finds the strongest path to employees or recruiters at a target company  
+- Supports **first second and third-degree connections**
+
+### 🧠 Network Graph Visualization
+- Interactive graph that visually maps relationships between people and companies, linked with basic profiles  
+- Makes professional networks easier to explore and understand
+
+### 🌍 Multi-Network Expansion
+- Upload multiple connection datasets to expand and connect networks  
+- Reveals hidden opportunities across different professional graphs
+
+### ☕ AI Coffee Chat Assistant
+- Generates personalized networking and introduction messages, ready to send through email
+
+---
+
+## Tech Stack
+
+### Frontend
+- Next.js  
+- React  
+- Tailwind CSS  
+
+### Backend
+- Python  
+- FastAPI  
+
+### Database
+- Neo4j (Graph database for **People → Company** relationships)
+
+### AI
+- Gemini API
+
+---
+
+## Demo
+
+**Link:**  
+[Insert Demo Link Here]
+
+---
+
+## Sponsor Integrations
+
+- **Google Antigravity**  
+  The project was developed using Google's Antigravity IDE, which accelerated development by providing an integrated AI-powered coding environment for rapid prototyping and iteration.
+
+- **Auth0**  
+  Handles authentication and identity management, allowing users to securely log in and maintain protected profiles while ensuring sensitive data remains safe.
+
+- **Gemini API**  
+  Powers the AI Coffee Chat Assistant, generating personalized networking and introduction messages with a single click.
+
+- **Tailscale**  
+  Used for secure deployment and networking between services, ensuring safe and reliable communication across the application's infrastructure.
+---
+
+## Quick Start
 
 ```bash
 # 1. Start Neo4j Database
@@ -58,6 +98,3 @@ uvicorn main:app --reload
 cd frontend
 npm install
 npm run dev
-```
-
-*Built with ❤️ at HackCanada2026*

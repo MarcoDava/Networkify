@@ -1,41 +1,48 @@
+"use client"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { ArrowRight, Waypoints, Network, TrendingUp, Users, Zap } from "lucide-react"
+import dynamic from "next/dynamic"
+import { useEffect, useState } from "react"
+import { useAuth } from "@/components/AuthContext"
 
-
-
+const DemoGraph3D = dynamic(() => import("@/components/graph/DemoGraph3D"), { 
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-[#0a0a12]" />
+})
 
 
 export default function Home() {
+  const router = useRouter()
+  const { isAuthenticated, isLoading, user } = useAuth()
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [mounted, setMounted] = useState(false)
+
+  const userInitials = user?.name
+    ? user.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase()
+    : user?.email?.[0]?.toUpperCase() || "?"
+
+  useEffect(() => {
+    setMounted(true)
+    const updateDimensions = () => {
+      setDimensions({ width: window.innerWidth, height: window.innerHeight })
+    }
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+    return () => window.removeEventListener("resize", updateDimensions)
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#0a0a12] relative overflow-hidden">
-      {/* Cosmic background */}
-      <div className="fixed inset-0 -z-10">
-        {/* Stars/particles effect */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_0%,_#0a0a12_70%)]" />
-       
-        {/* Main glow ring */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px]">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-t from-brand-600/40 via-purple-500/20 to-transparent blur-[80px] animate-pulse-slow" />
-          <div className="absolute inset-12 rounded-full border border-purple-500/20 animate-[spin_60s_linear_infinite]" />
-          <div className="absolute inset-24 rounded-full border border-brand-500/10 animate-[spin_45s_linear_infinite_reverse]" />
-        </div>
-
-
-
-
-        {/* Particle dots */}
-        {[...Array(50)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-0.5 h-0.5 bg-white/30 rounded-full animate-pulse"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 3}s`,
-            }}
-          />
-        ))}
+      {/* 3D Graph Background */}
+      <div className="fixed inset-0 z-0">
+        {mounted && dimensions.width > 0 && (
+          <DemoGraph3D width={dimensions.width} height={dimensions.height} />
+        )}
+        
+        {/* Gradient overlays for readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a12]/60 via-transparent to-[#0a0a12]/80 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#0a0a12_85%)] pointer-events-none" />
       </div>
 
 
@@ -45,27 +52,32 @@ export default function Home() {
           <div className="text-xs tracking-[0.2em] text-zinc-500 uppercase">
             Networkify
           </div>
-         
-          <div className="flex items-center gap-8 text-sm">
-            <Link href="/dashboard" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Dashboard
-            </Link>
-            <Link href="/connections" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Connections
-            </Link>
-            <Link href="/search" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Search
-            </Link>
-          </div>
 
-
-          <Link
-            href="/login  "
-            className="px-5 py-2 rounded-full border border-zinc-700 text-sm text-white hover:bg-white/5 transition-all flex items-center gap-2"
-          >
-            Sign in
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+          {/* Right side: auth-aware */}
+          {!isLoading && (
+            isAuthenticated ? (
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="flex items-center gap-3 group"
+                title={user?.name || user?.email || "Go to Dashboard"}
+              >
+                <span className="text-sm text-zinc-400 group-hover:text-white transition-colors hidden sm:inline">
+                  Dashboard
+                </span>
+                <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-sm font-semibold text-white ring-2 ring-brand-500/30 group-hover:ring-brand-400/60 transition-all">
+                  {userInitials}
+                </div>
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="px-5 py-2 rounded-full border border-zinc-700 text-sm text-white hover:bg-white/5 transition-all flex items-center gap-2"
+              >
+                Sign in
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            )
+          )}
         </div>
       </nav>
 
@@ -107,7 +119,7 @@ export default function Home() {
             Managing Networking Reinvented
           </h3>
           <Link
-            href="/dashboard"
+            href={isAuthenticated ? "/dashboard" : "/login"}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-800 text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition-all"
           >
             <Network className="w-3.5 h-3.5" />
@@ -134,10 +146,10 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2 text-sm text-zinc-500">
           <Link
-            href="/login"
+            href={isAuthenticated ? "/dashboard" : "/login"}
             className="px-5 py-2.5 rounded-full bg-[#d4ff00] text-black text-sm font-medium hover:bg-[#e5ff4d] transition-all flex items-center gap-2"
           >
-            Connect Now!
+            {isAuthenticated ? "Go to Dashboard" : "Connect Now!"}
           </Link>
           </div>
         </div>
