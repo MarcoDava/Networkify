@@ -39,6 +39,7 @@ This project involved the use of AI. But that is the reality of software enginee
 - FastAPI
 - Pandas
 - Authlib
+- Logo API
 
 **Database**
 - Neo4j + built-in cache for rapid retrieval of nodes and relationships
