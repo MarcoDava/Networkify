@@ -1,6 +1,6 @@
 # Networkify
 
-<img width="944" height="753" alt="Screenshot 2026-03-08 041726" src="https://github.com/user-attachments/assets/d4cbffee-d349-49f4-985f-ec394d99cd0f" />
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/4c665863-fd9c-406a-bf2b-402052e44ca1" />
 
 ## Inspiration
 The job search process for many looks like the following:
