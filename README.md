@@ -50,25 +50,6 @@ This project involved the use of AI. But that is the reality of software enginee
 **AI**
 - Gemini API (Gemini 2.0 Flash)
 
-## Challenges we ran into
-One of our biggest challenges was getting all the moving pieces to work together across a full-stack application under time pressure. We ran into environment variable mismatches between our .env files and our Pydantic config (e.g., NEO4J_USERNAME vs NEO4J_USER, and a logo.dev secret key sk_ being baked into 500+ Neo4j records instead of the public key pk_), which caused silent failures that were difficult to trace. Deploying the frontend to Vercel while the backend lived on a teammate's Google Cloud Run project introduced Auth0 callback URL mismatches and CORS considerations. On the frontend, building a performant force-directed graph visualization with clustering, drag-pinning, and 2D/3D toggling pushed us into performance bottlenecks, a full-screen backdrop-blur overlay was freezing the UI during mode switches, and the backend's synchronous Clearbit API calls were blocking FastAPI's async event loop for hundreds of seconds during CSV uploads with many unique companies.
-
-## Accomplishments that we're proud of
-We built a fully functional, end-to-end LinkedIn network intelligence tool in a single hackathon. Users can upload their LinkedIn connections CSV, which is widely available for all LinkedIn users, and within seconds see an interactive, visually rich graph that is complete with company logos, recruiter badges, initials on person nodes, and automatic clustering of large companies rendered in both 2D and 3D.
-
- We implemented smart graph merging that deduplicates people across multiple uploaded networks using email and name+company matching, a search and filter system that lets users drill into specific companies or recruiters, and an AI-powered message drafting feature. On the infrastructure side, we're proud of the performance optimizations we shipped: parallel company URL resolution with ThreadPoolExecutor, deduplicated API calls, non-blocking CSV processing via run_in_executor, and a lightweight mode-switching banner that doesn't tank frame rates.
-
-## What we learned
-We learned firsthand how many subtle issues arise when integrating multiple services such as Neo4j Aura, Auth0, logo.dev, Clearbit, Google Cloud Run, and Vercel that have their own authentication schemes. Small details like an env var name being off by one word, or a secret key vs public key prefix, can cause issues.
-
-We also gained a deep appreciation for async architecture: a single synchronous request.get() inside a FastAPI async handler can starve the entire event loop, and the fix (thread pool executor + deduplication + parallelism) turned a worst-case 500-second upload into roughly 50 seconds. 
-
-On the frontend, we learned that CSS effects like backdrop-blur have real GPU costs and that requestAnimationFrame is essential for giving the browser a chance to paint before heavy computation.
-
-## What's next for Networkify
-We want to expand Networkify into a true networking co-pilot by integrating real-time LinkedIn profile enrichment via Scrapfly to surface richer context like recent posts, mutual connections count, and activity signals. This would be done by using the LinkedIn API to access data without violating their terms of service and facing legal consequences from scraping their data, which they guardrail behind captchas and other modern web scraping prevention tools. 
-
-We plan to add a recommendation engine that proactively suggests whom to reach out to based on relevance scoring, and a Chrome extension that overlays Networkify insights directly on LinkedIn profile pages. On the infrastructure side, we want to move to WebSocket-based graph updates so multiple team members can collaboratively map their networks in real time, and implement proper CI/CD with GitHub Actions, deploying to Vercel and Cloud Run automatically on every push.
 ## Sponsor Integrations
 
 - **Google Antigravity**  
