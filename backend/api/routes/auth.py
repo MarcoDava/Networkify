@@ -161,22 +161,14 @@ def get_optional_user(
         return None
 
 
-def _backend_callback_url(request: Request) -> str:
-    """Build the Auth0 callback URL, forcing HTTPS regardless of Railway's internal proxy scheme."""
-    url = str(request.url_for("auth_callback"))
-    if url.startswith("http://"):
-        url = "https://" + url[len("http://"):]
-    return url
-
-
 @router.get("/login")
 async def login(request: Request):
-    redirect_uri = _backend_callback_url(request)
-
-    return await oauth.auth0.authorize_redirect(
-        request,
-        redirect_uri,
-    )
+    # Use the frontend (Vercel) domain for the callback so that the session
+    # cookie round-trips through the same domain it was set on.  If we use
+    # the Railway URL directly, Auth0 redirects the browser to Railway and the
+    # session cookie (set on networkify.live) is never sent → state mismatch.
+    redirect_uri = f"{_primary_frontend_url()}/auth/callback"
+    return await oauth.auth0.authorize_redirect(request, redirect_uri)
 
 
 
