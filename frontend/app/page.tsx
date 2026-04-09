@@ -1,7 +1,7 @@
 "use client"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Waypoints, Network, TrendingUp, Users, Zap } from "lucide-react"
+import { ArrowRight, Waypoints, Network, Users, Home, Upload, Search } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useAuth } from "@/components/AuthContext"
 
@@ -102,8 +102,8 @@ export default function Home() {
         </div>
 
 
-        {/* Side labels */}
-        <div className="absolute left-8 bottom-32 max-w-[200px]">
+        {/* Side labels — desktop only */}
+        <div className="hidden md:block absolute left-8 bottom-32 max-w-[200px]">
           <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Career_Intelligence</p>
           <h3 className="text-lg font-medium text-white mb-4 leading-snug">
             Managing Networking Reinvented
@@ -117,48 +117,42 @@ export default function Home() {
           </Link>
         </div>
 
-
-        <div className="absolute right-8 bottom-32 max-w-[250px] text-left">
+        <div className="hidden md:block absolute right-8 bottom-32 max-w-[250px] text-left">
           <p className="text-[10px] text-zinc-500 leading-relaxed">
             Networkify is a next-generation networking engine designed to navigate the complexity of professional relationships.
           </p>
         </div>
 
-
         {/* Bottom CTA */}
-        <div className=" flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
-            <div className="w-6 h-6 rounded-full border border-zinc-700 flex items-center justify-center">
-              <Waypoints className="w-3 h-3" />
-            </div>
-            
-            <span className="text-zinc-700">=</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <div className="flex items-center justify-center mt-4">
           <Link
             href={isAuthenticated ? "/dashboard" : "/login"}
             className="px-5 py-2.5 rounded-full bg-[#d4ff00] text-black text-sm font-medium hover:bg-[#e5ff4d] transition-all flex items-center gap-2"
           >
             {isAuthenticated ? "Go to Dashboard" : "Connect Now!"}
           </Link>
-          </div>
         </div>
       </main>
 
 
-      {/* Bottom tech icons */}
+      {/* Bottom feature nav */}
       <div className="relative z-10 border-t border-zinc-800/50 py-6">
-        <div className="max-w-4xl mx-auto flex items-center justify-center gap-12">
+        <div className="max-w-4xl mx-auto flex items-center justify-center gap-4 flex-wrap px-6">
           {[
-            { icon: Network, label: "Neo4j" },
-            { icon: Zap, label: "Gemini" },
-            { icon: TrendingUp, label: "FastAPI" },
-            { icon: Users, label: "LinkedIn" },
-            { icon: Waypoints, label: "Cloudinary" },
-          ].map((tech, i) => (
-            <div key={i} className="flex flex-col items-center gap-2 text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer">
-              <tech.icon className="w-5 h-5" />
-            </div>
+            { icon: Home, label: "Dashboard", href: "/dashboard" },
+            { icon: Upload, label: "Upload", href: "/upload" },
+            { icon: Search, label: "Search", href: "/search" },
+            { icon: Users, label: "Connections", href: "/connections" },
+            { icon: Network, label: "Graph", href: "/graph" },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={isAuthenticated ? item.href : "/login"}
+              className="flex flex-col items-center gap-1.5 text-zinc-600 hover:text-zinc-300 transition-colors group px-3 py-2"
+            >
+              <item.icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              <span className="text-[10px] uppercase tracking-wider">{item.label}</span>
+            </Link>
           ))}
         </div>
       </div>

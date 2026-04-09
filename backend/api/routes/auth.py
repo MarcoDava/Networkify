@@ -54,7 +54,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
         value=access_token,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite="none" if secure else "lax",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -63,7 +63,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
         value=refresh_token,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite="none" if secure else "lax",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
     )
@@ -75,14 +75,14 @@ def _clear_auth_cookies(response) -> None:
         key=ACCESS_COOKIE_NAME,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite="none" if secure else "lax",
         path="/",
     )
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite="none" if secure else "lax",
         path="/",
     )
 
