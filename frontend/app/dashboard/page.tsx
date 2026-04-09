@@ -119,14 +119,23 @@ export default function Dashboard() {
   // Track the actual graph container size so the canvas always matches it.
   // This fixes fullscreen: without this, dimensions were hardcoded to 800x600
   // and toggling fullscreen never resized the underlying canvas.
+  // NOTE: The <Graph> is placed in an absolutely-positioned wrapper below, so
+  // its canvas does NOT contribute to the container's intrinsic height. That
+  // breaks the resize-feedback loop that previously caused the map/calendar
+  // row to keep extending every frame.
   useEffect(() => {
     const el = graphContainerRef.current
     if (!el) return
 
     const update = () => {
-      setDimensions({
-        width: el.clientWidth || window.innerWidth,
-        height: el.clientHeight || window.innerHeight,
+      const w = el.clientWidth || window.innerWidth
+      const h = el.clientHeight || window.innerHeight
+      setDimensions(prev => {
+        // Ignore sub-pixel / 1px jitter to avoid any residual re-render loops.
+        if (Math.abs(prev.width - w) < 2 && Math.abs(prev.height - h) < 2) {
+          return prev
+        }
+        return { width: w, height: h }
       })
     }
     update()
@@ -440,10 +449,19 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <Graph
-                width={dimensions.width}
-                height={dimensions.height}
-              />
+              {/*
+                Absolutely position the graph so its canvas does not
+                contribute to the container's flow height. Without this, the
+                ResizeObserver above would feed the canvas size back into the
+                container's clientHeight, causing the row (and the calendar
+                alongside it) to keep extending.
+              */}
+              <div className={`absolute ${isFullscreen ? "inset-0" : "inset-8"}`}>
+                <Graph
+                  width={dimensions.width}
+                  height={dimensions.height}
+                />
+              </div>
             </div>
 
           {showUI && !isFullscreen && (
